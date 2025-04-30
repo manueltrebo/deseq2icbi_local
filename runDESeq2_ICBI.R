@@ -173,6 +173,8 @@ if (gene_id_type == "ENSEMBL") {
   count_mat = count_mat %>% mutate(gene_id= remove_ensg_version(gene_id))
 }
 
+print(count_mat)
+
 ensg_to_genesymbol = count_mat %>% select(gene_id, gene_name)
 ensg_to_desc = AnnotationDbi::select(org.Hs.eg.db, count_mat$gene_id %>% unique(), keytype = gene_id_type, columns = c("GENENAME")) %>%
   distinct(across(!!gene_id_type), .keep_all = TRUE)
@@ -302,13 +304,23 @@ resIHWsig_fc_entrez <- resIHWsig_fc %>%  inner_join(hgnc_to_entrez, by=c("gene_n
 de_foldchanges <- resIHWsig_fc_entrez$log2FoldChange
 names(de_foldchanges) <- resIHWsig_fc_entrez$ENTREZID
 
+## addition of paths for working offline
+cache_path <- "/home/q089mt/scRNAseq/HLH_analysis/scripts/deseq/deseq2icbi_local/cache_files/"
+kegg_pathways <- readRDS(paste0(cache_path,"kegg_human.rds"))
+
+colnames(kegg_pathways$KEGGPATHID2EXTID) <- c("TERM", "GENE")
+colnames(kegg_pathways$KEGGPATHID2NAME) <- c("TERM", "NAME")
+
+wp_pathways <- readRDS(paste0(cache_path,"wp_gmt_pathways.rds"))
+
 ## ORA
 ora_tests = list(
   "KEGG" = function(genes, universe) {
-    enrichKEGG(
+    enricher(
       gene         = genes,
       universe     = universe,
-      organism     = 'hsa',
+      TERM2GENE    = kegg_pathways$KEGGPATHID2EXTID,
+      TERM2NAME    = kegg_pathways$KEGGPATHID2NAME,
       pvalueCutoff = 0.05
     )
   },
@@ -322,11 +334,12 @@ ora_tests = list(
     )
   },
   "WikiPathway" = function(genes, universe) {
-    enrichWP(
+    enricher(
       gene = genes,
       universe     = universe,
-      organism     = 'Homo sapiens',
-      pvalueCutoff = 0.05
+      TERM2GENE    = wp_pathways$TERM2GENE,
+      TERM2NAME    = wp_pathways$TERM2NAME,
+      pvalueCutoff = 0.05,
     )
   },
   "GO_BP" = function(genes, universe) {
@@ -413,13 +426,23 @@ if(!skip_gsea) {
 
   gsea_tests = list(
     "KEGG"=function(ranked_gene_list) {
-      gseKEGG(geneList = ranked_gene_list, organism = "hsa", pvalueCutoff = 1)
+      GSEA(geneList = ranked_gene_list,
+       #organism = "hsa",
+       pvalueCutoff = 1,
+       TERM2GENE=kegg_pathways$KEGGPATHID2EXTID,
+       TERM2NAME=kegg_pathways$KEGGPATHID2NAME,
+       )
     },
     "Reactome"=function(ranked_gene_list) {
       gsePathway(geneList = ranked_gene_list, organism = "human", pvalueCutoff = 1)
     },
     "WikiPathway"=function(ranked_gene_list) {
-      gseWP(geneList = ranked_gene_list, organism = "Homo sapiens", pvalueCutoff = 1)
+      GSEA(geneList = ranked_gene_list,
+      #organism = "Homo sapiens",
+      TERM2GENE = wp_pathways$TERM2GENE,
+      TERM2NAME = wp_pathways$TERM2NAME,
+      pvalueCutoff = 1
+      )
     },
     "GO_BP"=function(ranked_gene_list) {
       gseGO(geneList=ranked_gene_list,
