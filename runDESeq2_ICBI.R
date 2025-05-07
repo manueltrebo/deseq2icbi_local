@@ -471,12 +471,20 @@ if(!skip_gsea) {
     gsea_res = setReadable(gsea_res, OrgDb = org.Hs.eg.db, keyType="ENTREZID")
     res_tab = gsea_res@result %>% as_tibble()
 
+    #for split plots
+    gsea_res@result$status <- ifelse(gsea_res@result$NES > 0, "activated", "suppressed")
+
     write_tsv(res_tab, file.path(results_dir, paste0(prefix, "_GSEA_", gsea_name, ".tsv")))
     if (min(res_tab$p.adjust) < 0.05) {
       p = dotplot(gsea_res, showCategory=40)
 
-      save_plot(file.path(results_dir, paste0(prefix, "_GSEA_", gsea_name, "_dotplot")), p, width = 15, height = 10)
+      save_plot(file.path(results_dir, paste0(prefix, "_GSEA_", gsea_name, "_dotplot")), p, width = 15, height = 16)
 
+      p = dotplot(gsea_res, showCategory=20, split = "status", label_format = 40) +
+        facet_grid(~.sign) +
+        theme(panel.spacing = unit(0.5, "cm"),axis.text.y = element_text(size = 8))
+
+      save_plot(file.path(results_dir, paste0(prefix, "_GSEA_", gsea_name, "_dotplot_split")), p, width = 15, height = 16)
 
       p <- cnetplot(gsea_res,
                     categorySize="pvalue",
@@ -484,7 +492,7 @@ if(!skip_gsea) {
                     foldChange=de_foldchanges,
                     vertex.label.font=6)
 
-      save_plot(file.path(results_dir, paste0(prefix, "_GSEA_", gsea_name, "_cnetplot")), p, width = 15, height = 12)
+      save_plot(file.path(results_dir, paste0(prefix, "_GSEA_", gsea_name, "_cnetplot")), p, width = 15, height = 16)
 
       # GSEA generates to long gene lists so that the heatplot gets to overloaded
       # p <- heatplot(gsea_res, foldChange=de_foldchanges, showCategory=40) +
