@@ -2,12 +2,13 @@
 'runDESeq2_ICBI.R
 
 Usage:
-  runDESeq2_ICBI.R <sample_sheet> <count_table> --result_dir=<res_dir> --c1=<c1> --c2=<c2> [options]
+  runDESeq2_ICBI.R <sample_sheet> <count_table> <cell_type> --result_dir=<res_dir> --c1=<c1> --c2=<c2> [options]
   runDESeq2_ICBI.R --help
 
 Arguments:
   <sample_sheet>                CSV file with the sample annotations.
   <count_table>                 TSV file with the read counts
+  <cell_type>                   Cell Type from Annotation
 
 Mandatory options:
   --result_dir=<res_dir>        Output directory
@@ -60,8 +61,12 @@ conflict_prefer("select", "dplyr")
 conflict_prefer("filter", "dplyr")
 conflict_prefer("count", "dplyr")
 library("EnhancedVolcano")
+library("pheatmap")
 library("ggpubr")
 library("tibble")
+library("RColorBrewer")
+library("gtools")
+library("stringr")
 conflict_prefer("paste", "base")
 conflict_prefer("rename", "dplyr")
 remove_ensg_version = function(x) gsub("\\.[0-9]*$", "", x)
@@ -71,6 +76,7 @@ remove_ensg_version = function(x) gsub("\\.[0-9]*$", "", x)
 # Input and output
 sampleAnnotationCSV <- arguments$sample_sheet
 readCountFile <- arguments$count_table
+cell_type = arguments$cell_type
 results_dir = arguments$result_dir
 paired_grp <- arguments$paired_grp
 
@@ -141,10 +147,10 @@ genes_of_interest = arguments$genes_of_interest
 register(MulticoreParam(workers = n_cpus))
 
 if (is.null(plot_title)) {
-  plot_title = paste0(contrast[[2]], " vs. ", contrast[[3]])
+  plot_title = paste0(contrast[[2]], " vs. ", contrast[[3]], "_", cell_type)
 }
 if (is.null(prefix)) {
-  prefix = paste0(contrast[[2]], "_", contrast[[3]])
+  prefix = paste0(contrast[[2]], "_", contrast[[3]], "_", cell_type)
 }
 if (is.null(covariate_formula)) {
   covariate_formula = ""
@@ -213,16 +219,18 @@ write_tsv(counts(dds) %>% as_tibble(rownames = "gene_id"), file.path(results_dir
 
 # save normalized filtered count file
 dds <- estimateSizeFactors(dds)
-write_tsv(counts(dds, normalized=TRUE) %>% as_tibble(rownames = "gene_id"), file.path(results_dir, paste0(prefix, "_detectedGenesNormalizedCounts_min_10_reads_in_one_condition.tsv")))
+
+#get normalized counts:
+norm_mat <- counts(dds, normalized=T) %>%
+    as_tibble(rownames = "gene_id")
+
+write_tsv(norm_mat, file.path(results_dir, paste0(prefix, "_detectedGenesNormalizedCounts_min_10_reads_in_one_condition.tsv")))
 
 # Set the reference to the contrast level 2 (baseline) given by the --c2 option
 dds[[cond_col]] = relevel( dds[[cond_col]], contrast[[3]])
 
 # run DESeq
 dds <- DESeq(dds, parallel = (n_cpus > 1))
-
-# get normalized counts
-nc <- counts(dds, normalized=T)
 
 ### IHW
 # use of IHW for p value adjustment of DESeq2 results
@@ -391,7 +399,7 @@ bplapply(names(ora_tests), function(ora_name) {
   if (min(res_tab$p.adjust) < 0.05) {
     p = dotplot(ora_res, showCategory=40)
 
-    save_plot(file.path(results_dir, paste0(prefix, "_ORA_", ora_name, "_dotplot")), p, width = 15, height = 10)
+    save_plot(file.path(results_dir, paste0(prefix, "_ORA_", ora_name, "_dotplot")), p, width = 15, height = 16)
 
     p <- cnetplot(ora_res,
                   categorySize="pvalue",
@@ -399,10 +407,11 @@ bplapply(names(ora_tests), function(ora_name) {
                   foldChange=de_foldchanges,
                   vertex.label.font=6)
 
-    save_plot(file.path(results_dir, paste0(prefix, "_ORA_", ora_name, "_cnetplot")), p, width = 15, height = 12)
+    save_plot(file.path(results_dir, paste0(prefix, "_ORA_", ora_name, "_cnetplot")), p, width = 15, height = 16)
 
-    p <- heatplot(ora_res, foldChange=de_foldchanges, showCategory=40) +
-      scale_fill_gradient2(midpoint=0, low="blue4", mid="white", high="red4" )
+    p <- heatplot(ora_res, foldChange=de_foldchanges, showCategory=40, label_format = 30) +
+      scale_fill_gradient2(midpoint=0, low="blue4", mid="white", high="red4" )+
+      theme(axis.text.y = element_text(size = 8))
     hp_dims <- get_heatplot_dims(p)
 
     save_plot(file.path(results_dir, paste0(prefix, "_ORA_", ora_name, "_heatplot")), p, width = hp_dims[1], height = hp_dims[2])
@@ -574,3 +583,72 @@ if(!is.null(genes_of_interest)) {
 
 }
 
+###Heatmaps of top significant genes for visualisation:
+#prepare mat for heatmap
+norm_mat <- column_to_rownames(norm_mat, var="gene_id")
+
+#get the top 30 genes
+IHWsigFCgene_heatmap <- de_res_list$IHWsigFCgenes %>%
+    as.data.frame() %>%
+    filter(!str_starts(gene_id, "ENSG")) %>%
+    column_to_rownames(var="gene_id") %>%
+    slice_min(order_by = padj, n = 30, with_ties = FALSE)
+
+#subset on top 30 genes
+mat_topgs <- norm_mat[rownames(norm_mat) %in% rownames(IHWsigFCgene_heatmap), ]
+
+#scaling
+mat_topgs <- t(scale(t(mat_topgs)))
+
+#get coolwarm color scheme
+colors <- colorRampPalette(rev(brewer.pal(10, "RdBu")))(100)
+
+#reorder
+mat_topgs <- mat_topgs[, mixedorder(colnames(mat_topgs))]
+
+p <- pheatmap(
+  mat_topgs,
+  color = colors,
+  cellwidth = 20,
+  cellheight = 10,
+  border_color = NA,
+  angle_col=45,
+  cluster_rows = TRUE,
+  cluster_cols = FALSE,
+  fontsize_row = 10,
+  fontsize_col = 10,
+  show_rownames = TRUE,
+  show_colnames = TRUE,
+  treeheight_row = 20,
+  legend = TRUE,
+  main = paste0(prefix, "- top 30")
+)
+
+save_plot(file.path(results_dir, paste0(prefix, "_heatmap_top_30_padj")), p, width = 9, height = 7)
+
+#get top 500
+IHWsigFCgene_heatmap <- de_res_list$IHWsigFCgenes %>%
+    as.data.frame() %>%
+    filter(!str_starts(gene_id, "ENSG")) %>%
+    column_to_rownames(var="gene_id") %>%
+    slice_min(order_by = padj, n = 300, with_ties = FALSE)
+
+p <- pheatmap(
+  mat_topgs,
+  color = colors,
+  #cellwidth = 20,
+  #cellheight = 1,
+  border_color = NA,
+  angle_col=45,
+  cluster_rows = TRUE,
+  cluster_cols = FALSE,
+  fontsize_row = 10,
+  fontsize_col = 10,
+  show_rownames = F,
+  show_colnames = T,
+  treeheight_row = 20,
+  legend = TRUE,
+  main = paste0(prefix, "- top 300")
+)
+
+save_plot(file.path(results_dir, paste0(prefix, "_heatmap_top_300_padj")), p, width = 9, height = 7)
