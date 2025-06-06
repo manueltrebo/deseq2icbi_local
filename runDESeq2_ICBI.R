@@ -39,6 +39,8 @@ Optional options:
   --genes_of_interest=<genes>   File containing a list of genes to highlight in the volcano plot
 ' -> doc
 
+#added few plotting options
+
 library("conflicted")
 library("docopt")
 arguments = docopt(doc, version = "0.1")
