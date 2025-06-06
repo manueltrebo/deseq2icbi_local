@@ -191,6 +191,8 @@ count_mat = count_mat %>%
   round() # salmon does not necessarily contain integers
 
 
+plot_list <- list()
+
 save_plot <- function(filename, p, width=NULL, height=NULL) {
   if (!is.null(width) && !is.null(height)) {
     ggsave(file.path(paste0(filename, ".png")), plot = p, width = width, height = height)
@@ -347,7 +349,7 @@ ora_tests = list(
       universe     = universe,
       TERM2GENE    = wp_pathways$TERM2GENE,
       TERM2NAME    = wp_pathways$TERM2NAME,
-      pvalueCutoff = 0.05,
+      pvalueCutoff = 0.05
     )
   },
   "GO_BP" = function(genes, universe) {
@@ -389,38 +391,52 @@ get_heatplot_dims <- function(p) {
   return(c(hp_width, hp_height))
 }
 
-bplapply(names(ora_tests), function(ora_name) {
+ora_plot_list <- bplapply(names(ora_tests), function(ora_name) {
   message(paste0("Performing ", ora_name, " ORA-test..."))
   test_fun = ora_tests[[ora_name]]
   ora_res = test_fun(resIHWsig_fc_entrez$ENTREZID, universe)
   ora_res = setReadable(ora_res, OrgDb = org.Hs.eg.db, keyType="ENTREZID")
   res_tab = as_tibble(ora_res@result)
   write_tsv(res_tab, file.path(results_dir, paste0(prefix, "_ORA_", ora_name, ".tsv")))
+
+  plots <- list()
+
   if (min(res_tab$p.adjust) < 0.05) {
-    p = dotplot(ora_res, showCategory=40)
+    dot_p = dotplot(ora_res, showCategory=30, title=ora_name)
 
-    save_plot(file.path(results_dir, paste0(prefix, "_ORA_", ora_name, "_dotplot")), p, width = 15, height = 16)
+    save_plot(file.path(results_dir, paste0(prefix, "_ORA_", ora_name, "_dotplot")), dot_p, width = 15, height = 16)
 
-    p <- cnetplot(ora_res,
+    cnet_p <- cnetplot(ora_res,
                   categorySize="pvalue",
                   showCategory = 5,
                   foldChange=de_foldchanges,
-                  vertex.label.font=6)
+                  vertex.label.font=6)+
+                  ggtitle(ora_name)
 
-    save_plot(file.path(results_dir, paste0(prefix, "_ORA_", ora_name, "_cnetplot")), p, width = 15, height = 16)
+    save_plot(file.path(results_dir, paste0(prefix, "_ORA_", ora_name, "_cnetplot")), cnet_p, width = 15, height = 16)
 
-    p <- heatplot(ora_res, foldChange=de_foldchanges, showCategory=40, label_format = 30) +
+    heat_p <- heatplot(ora_res, foldChange=de_foldchanges, showCategory=20, label_format = 30) +
       scale_fill_gradient2(midpoint=0, low="blue4", mid="white", high="red4" )+
-      theme(axis.text.y = element_text(size = 8))
-    hp_dims <- get_heatplot_dims(p)
+      theme(
+      axis.text.x = element_text(size = 4),
+      axis.text.y = element_text(size = 8)
+      )+
+      ggtitle(ora_name)
+    hp_dims <- get_heatplot_dims(heat_p)
 
-    save_plot(file.path(results_dir, paste0(prefix, "_ORA_", ora_name, "_heatplot")), p, width = hp_dims[1], height = hp_dims[2])
+    save_plot(file.path(results_dir, paste0(prefix, "_ORA_", ora_name, "_heatplot")), heat_p, width = hp_dims[1], height = hp_dims[2])
 
+    plots <- setNames(
+    list(dot_p, cnet_p, heat_p),
+    paste0(ora_name, c("_dotplot", "_cnetplot", "_heatplot"))
+    )
   } else {
     message(paste0("Warning: No significant enrichment in ", ora_name, " ORA analysis. "))
   }
+  return(plots)
 })
 
+plot_list <- c(plot_list, unlist(ora_plot_list, recursive = FALSE))
 
 ## GSEA
 if(!skip_gsea) {
@@ -439,7 +455,7 @@ if(!skip_gsea) {
        #organism = "hsa",
        pvalueCutoff = 1,
        TERM2GENE=kegg_pathways$KEGGPATHID2EXTID,
-       TERM2NAME=kegg_pathways$KEGGPATHID2NAME,
+       TERM2NAME=kegg_pathways$KEGGPATHID2NAME
        )
     },
     "Reactome"=function(ranked_gene_list) {
@@ -473,7 +489,7 @@ if(!skip_gsea) {
     }
   )
 
-  bplapply(names(gsea_tests), function(gsea_name) {
+  gsea_plot_list <- bplapply(names(gsea_tests), function(gsea_name) {
     message(paste0("Performing ", gsea_name, " GSEA-test..."))
     test_fun = gsea_tests[[gsea_name]]
     gsea_res = test_fun(ranked_gene_list)
@@ -485,23 +501,24 @@ if(!skip_gsea) {
 
     write_tsv(res_tab, file.path(results_dir, paste0(prefix, "_GSEA_", gsea_name, ".tsv")))
     if (min(res_tab$p.adjust) < 0.05) {
-      p = dotplot(gsea_res, showCategory=40)
+      dot_p = dotplot(gsea_res, showCategory=20, title=gsea_name)
 
-      save_plot(file.path(results_dir, paste0(prefix, "_GSEA_", gsea_name, "_dotplot")), p, width = 15, height = 16)
+      save_plot(file.path(results_dir, paste0(prefix, "_GSEA_", gsea_name, "_dotplot")), dot_p, width = 15, height = 16)
 
-      p = dotplot(gsea_res, showCategory=20, split = "status", label_format = 40) +
+      split_p = dotplot(gsea_res, showCategory=20, split = "status", label_format = 40, title=gsea_name) +
         facet_grid(~.sign) +
         theme(panel.spacing = unit(0.5, "cm"),axis.text.y = element_text(size = 8))
 
-      save_plot(file.path(results_dir, paste0(prefix, "_GSEA_", gsea_name, "_dotplot_split")), p, width = 15, height = 16)
+      save_plot(file.path(results_dir, paste0(prefix, "_GSEA_", gsea_name, "_dotplot_split")), split_p, width = 15, height = 16)
 
-      p <- cnetplot(gsea_res,
+      cnet_p <- cnetplot(gsea_res,
                     categorySize="pvalue",
                     showCategory = 5,
                     foldChange=de_foldchanges,
-                    vertex.label.font=6)
+                    vertex.label.font=6)+
+                    ggtitle(gsea_name)
 
-      save_plot(file.path(results_dir, paste0(prefix, "_GSEA_", gsea_name, "_cnetplot")), p, width = 15, height = 16)
+      save_plot(file.path(results_dir, paste0(prefix, "_GSEA_", gsea_name, "_cnetplot")), cnet_p, width = 15, height = 16)
 
       # GSEA generates to long gene lists so that the heatplot gets to overloaded
       # p <- heatplot(gsea_res, foldChange=de_foldchanges, showCategory=40) +
@@ -510,29 +527,37 @@ if(!skip_gsea) {
       # hp_dims <- get_heatplot_dims(p)
       #
       # ggsave(file.path(results_dir, paste0(prefix, "_GSEA_", gsea_name, "_heatplot.png")), plot = p, width = hp_dims[1], height = hp_dims[2])
+
+      plots <- setNames(
+           list(dot_p, split_p, cnet_p),
+           paste0(gsea_name, c("_dotplot", "_splitplot", "_cnetplot"))
+        )
     } else {
       message(paste0("Warning: No significant enrichment in ", gsea_name, " GSEA analysis. "))
     }
+    return(plots)
   })
 }
 
+plot_list <- c(plot_list, unlist(gsea_plot_list, recursive = FALSE))
 
 ########### PCA plot
 vsd <- vst(dds, blind=FALSE)
 
 
-p <- plotPCA(vsd, intgroup=c(cond_col)) +
+pca_p <- plotPCA(vsd, intgroup=c(cond_col)) +
   geom_point() +
   geom_text(vjust = 0,hjust = 0.2, nudge_x = -1, nudge_y = 0.5, aes(label = name)) +
   ggtitle(paste0("PCA: ", plot_title)) +
   scale_color_brewer(type="qual", palette="Set1") +
   theme_bw()
 
-save_plot(file.path(results_dir, paste0(prefix, "_PCA")), p)
+save_plot(file.path(results_dir, paste0(prefix, "_PCA")), pca_p)
+plot_list[["PCA"]] <- pca_p
 
 
 ########## Volcano plot
-p <- EnhancedVolcano(resIHW,
+volc_puadj <- EnhancedVolcano(resIHW,
                 lab = resIHW$gene_name,
                 x = "log2FoldChange",
                 y = "pvalue",
@@ -543,10 +568,10 @@ p <- EnhancedVolcano(resIHW,
                 caption = paste0("fold change cutoff: ", round(2**fc_cutoff, 1), ", p-value cutoff: ", 1e-6),
                 title = plot_title)
 
-save_plot(file.path(results_dir, paste0(prefix, "_volcano")), p, width = 9, height = 7)
+save_plot(file.path(results_dir, paste0(prefix, "_volcano")), volc_puadj, width = 9, height = 7)
+plot_list[["volcano_unadj"]] <- volc_puadj
 
-
-p <- EnhancedVolcano(resIHW,
+volc_padj <- EnhancedVolcano(resIHW,
                 lab = resIHW$gene_name,
                 x = "log2FoldChange",
                 y = "padj",
@@ -557,8 +582,8 @@ p <- EnhancedVolcano(resIHW,
                 caption = paste0("fold change cutoff: ", round(2**fc_cutoff, 1), ", adj.p-value cutoff: ", fdr_cutoff),
                 title = plot_title)
 
-save_plot(file.path(results_dir, paste0(prefix, "_volcano_padj")), p, width = 9, height = 7)
-
+save_plot(file.path(results_dir, paste0(prefix, "_volcano_padj")), volc_padj, width = 9, height = 7)
+plot_list[["volcano_adj"]] <- volc_padj
 
 if(!is.null(genes_of_interest)) {
   goi = read_tsv(genes_of_interest, comment = "#")
@@ -580,12 +605,13 @@ if(!is.null(genes_of_interest)) {
                   title = plot_title)
 
   save_plot(file.path(results_dir, paste0(prefix, "_volcano_padj_GoI")), p, width = 9, height = 7)
-
 }
 
 ###Heatmaps of top significant genes for visualisation:
 #prepare mat for heatmap
 norm_mat <- column_to_rownames(norm_mat, var="gene_id")
+
+norm_mat <- t(scale(t(norm_mat)))
 
 #get the top 30 genes
 IHWsigFCgene_heatmap <- de_res_list$IHWsigFCgenes %>%
@@ -597,22 +623,25 @@ IHWsigFCgene_heatmap <- de_res_list$IHWsigFCgenes %>%
 #subset on top 30 genes
 mat_topgs <- norm_mat[rownames(norm_mat) %in% rownames(IHWsigFCgene_heatmap), ]
 
-#scaling
-mat_topgs <- t(scale(t(mat_topgs)))
-
-#get coolwarm color scheme
-colors <- colorRampPalette(rev(brewer.pal(10, "RdBu")))(100)
+#calculate min and max for symmetric visualisation
+min_val <- min(mat_topgs, na.rm = TRUE)
+max_val <- max(mat_topgs, na.rm = TRUE)
+abs_max <- max(abs(min_val), abs(max_val))
+n_colors = 100 #bins of colors
+colors <- colorRampPalette(rev(brewer.pal(10, "RdBu")))(n_colors)
+breaks <- seq(-abs_max, abs_max, length.out = n_colors+1)
 
 #reorder
 mat_topgs <- mat_topgs[, mixedorder(colnames(mat_topgs))]
 
-p <- pheatmap(
+heat_p30 <- pheatmap(
   mat_topgs,
   color = colors,
+  breaks = breaks,
   cellwidth = 20,
   cellheight = 10,
   border_color = NA,
-  angle_col=45,
+  angle_col="45",
   cluster_rows = TRUE,
   cluster_cols = FALSE,
   fontsize_row = 10,
@@ -624,22 +653,36 @@ p <- pheatmap(
   main = paste0(prefix, "- top 30")
 )
 
-save_plot(file.path(results_dir, paste0(prefix, "_heatmap_top_30_padj")), p, width = 9, height = 7)
+save_plot(file.path(results_dir, paste0(prefix, "_heatmap_top_30_padj")), heat_p30, width = 9, height = 7)
+plot_list[["top_30"]] <- heat_p30
 
-#get top 500
+#get top 300
 IHWsigFCgene_heatmap <- de_res_list$IHWsigFCgenes %>%
     as.data.frame() %>%
     filter(!str_starts(gene_id, "ENSG")) %>%
     column_to_rownames(var="gene_id") %>%
     slice_min(order_by = padj, n = 300, with_ties = FALSE)
 
-p <- pheatmap(
+#subset on top 300 genes
+mat_topgs <- norm_mat[rownames(norm_mat) %in% rownames(IHWsigFCgene_heatmap), ]
+
+#calculate min and max for symmetric visualisation
+min_val <- min(mat_topgs, na.rm = TRUE)
+max_val <- max(mat_topgs, na.rm = TRUE)
+abs_max <- max(abs(min_val), abs(max_val))
+breaks <- seq(-abs_max, abs_max, length.out = n_colors+1)
+
+#reorder
+mat_topgs <- mat_topgs[, mixedorder(colnames(mat_topgs))]
+
+heat_p300 <- pheatmap(
   mat_topgs,
   color = colors,
+  breaks = breaks,
   #cellwidth = 20,
   #cellheight = 1,
   border_color = NA,
-  angle_col=45,
+  angle_col="45",
   cluster_rows = TRUE,
   cluster_cols = FALSE,
   fontsize_row = 10,
@@ -651,4 +694,15 @@ p <- pheatmap(
   main = paste0(prefix, "- top 300")
 )
 
-save_plot(file.path(results_dir, paste0(prefix, "_heatmap_top_300_padj")), p, width = 9, height = 7)
+save_plot(file.path(results_dir, paste0(prefix, "_heatmap_top_300_padj")), heat_p300, width = 9, height = 7)
+plot_list[["top_300"]] <- heat_p300
+
+#open the pdf
+pdf(file.path(results_dir, paste0(prefix, "_all_plots.pdf")), width=10, height=8)
+
+print(names(plot_list))
+
+for (plot_name in names(plot_list)) {
+  print(plot_list[[plot_name]])
+}
+dev.off()
