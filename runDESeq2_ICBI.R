@@ -699,12 +699,12 @@ heat_p300 <- pheatmap(
 save_plot(file.path(results_dir, paste0(prefix, "_heatmap_top_300_padj")), heat_p300, width = 9, height = 7)
 plot_list[["top_300"]] <- heat_p300
 
-#open the pdf
-pdf(file.path(results_dir, paste0(prefix, "_all_plots.pdf")), width=10, height=8)
+print("END!!")
 
-print(names(plot_list))
-
-for (plot_name in names(plot_list)) {
-  print(plot_list[[plot_name]])
-}
-dev.off()
+#open the pdf ##doesnt work for now
+#pdf(file.path(results_dir, paste0(prefix, "_all_plots.pdf")), width=10, height=8)
+#print(names(plot_list))
+#for (plot_name in names(plot_list)) {
+#  print(plot_list[[plot_name]])
+#}
+#dev.off()
