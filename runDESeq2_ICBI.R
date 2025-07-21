@@ -316,9 +316,9 @@ resIHWsig_fc_entrez <- resIHWsig_fc %>%  inner_join(hgnc_to_entrez, by=c("gene_n
 de_foldchanges <- resIHWsig_fc_entrez$log2FoldChange
 names(de_foldchanges) <- resIHWsig_fc_entrez$ENTREZID
 
-## addition of paths for working offline
-cache_path <- "/home/q089mt/scRNAseq/HLH_analysis/scripts/deseq/deseq2icbi_local/cache_files/"
-kegg_pathways <- readRDS(paste0(cache_path,"kegg_human.rds"))
+## addition of paths for working offline - must be as pulled
+cache_path <- file.path(Sys.getenv("HOME"), "scRNAseq/HLH_analysis/scripts/deseq/deseq2icbi_local/cache_files/")
+kegg_pathways <- readRDS(file.path(cache_path, "kegg_human.rds"))
 
 colnames(kegg_pathways$KEGGPATHID2EXTID) <- c("TERM", "GENE")
 colnames(kegg_pathways$KEGGPATHID2NAME) <- c("TERM", "NAME")
@@ -394,14 +394,13 @@ get_heatplot_dims <- function(p) {
 }
 
 ora_plot_list <- bplapply(names(ora_tests), function(ora_name) {
+  plots <- list() #inizialize plots for saving
   message(paste0("Performing ", ora_name, " ORA-test..."))
   test_fun = ora_tests[[ora_name]]
   ora_res = test_fun(resIHWsig_fc_entrez$ENTREZID, universe)
   ora_res = setReadable(ora_res, OrgDb = org.Hs.eg.db, keyType="ENTREZID")
   res_tab = as_tibble(ora_res@result)
   write_tsv(res_tab, file.path(results_dir, paste0(prefix, "_ORA_", ora_name, ".tsv")))
-
-  plots <- list()
 
   if (min(res_tab$p.adjust) < 0.05) {
     dot_p = dotplot(ora_res, showCategory=30, title=ora_name)
@@ -492,6 +491,7 @@ if(!skip_gsea) {
   )
 
   gsea_plot_list <- bplapply(names(gsea_tests), function(gsea_name) {
+    plots <- list() #inizialize plots for saving
     message(paste0("Performing ", gsea_name, " GSEA-test..."))
     test_fun = gsea_tests[[gsea_name]]
     gsea_res = test_fun(ranked_gene_list)
