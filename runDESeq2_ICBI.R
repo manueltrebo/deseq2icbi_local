@@ -148,6 +148,8 @@ genes_of_interest = arguments$genes_of_interest
 ############### Sanitize parameters and read input data
 register(MulticoreParam(workers = n_cpus))
 
+pdf(NULL) 
+
 if (is.null(plot_title)) {
   plot_title = paste0(contrast[[2]], " vs. ", contrast[[3]], "_", cell_type)
 }
