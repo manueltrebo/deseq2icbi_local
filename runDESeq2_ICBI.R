@@ -548,6 +548,8 @@ plot_list <- c(plot_list, unlist(gsea_plot_list, recursive = FALSE))
 ########### PCA plot
 vsd <- vst(dds, blind=FALSE)
 
+##use this in case for low gene numbers present
+#vsd <- varianceStabilizingTransformation(dds, blind = FALSE)
 
 pca_p <- plotPCA(vsd, intgroup=c(cond_col)) +
   geom_point() +
